@@ -93,7 +93,7 @@ class MeetingService:
                 logger.warning(f"删除音频文件失败: {e}")
 
         # 手动删除关联数据（避免外键约束不一致）
-        for table in ("agent_runs", "transcripts", "summaries",
+        for table in ("agent_runs", "decisions", "transcripts", "summaries",
                        "action_items", "risks", "chat_sessions", "rooms"):
             await db.execute(
                 text(f"DELETE FROM {table} WHERE meeting_id = :mid"),
