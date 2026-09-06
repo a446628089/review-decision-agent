@@ -27,6 +27,8 @@ async def lifespan(app: FastAPI):
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     yield
     # 关闭时：关闭 SFU 连接池等资源
+    from app.services.sfu_bridge import sfu_bridge
+    await sfu_bridge.aclose()
 
 
 app = FastAPI(
