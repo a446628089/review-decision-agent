@@ -1,0 +1,42 @@
+# 环境变量（含 API Key，禁止上传）
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.venv
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+frontend/dist/
+
+# 上传的音频文件
+backend/uploads/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# AI 生成的文档（不上传 git）
+*.md
+!README.md
+!AGENTS.md
+docs/
+
+# 一键脚本运行日志（dev.ps1 / stop.ps1 产生，每次运行重建）
+dev-*.log
+
+# IDE/Agent 工具缓存（skills 下载目录，非项目代码）
+.agents/
+
+# CodeGraph 本地索引（运行时生成，不进代码仓库）
+.codegraph/
