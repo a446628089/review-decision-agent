@@ -62,6 +62,11 @@ class SummaryService:
         initial_state: MeetingAgentState = {'meeting_id': str(meeting_id), 'meeting_title': meeting.title, 'transcript_text': transcript_text, 'summary': '', 'key_points': [], 'action_items': [], 'risks': [], 'errors': []}
         try:
             final_state = await meeting_graph.ainvoke(initial_state)
+            from app.agents.nodes.decision_extractor import decision_extractor_node
+            from app.services.decision_graph_service import decision_graph_service
+            extracted = await decision_extractor_node(initial_state)
+            if extracted.get("decisions"):
+                await decision_graph_service.save_decisions(db, meeting_id, extracted["decisions"])
             errors: list[str] = final_state.get('errors', [])
             if errors:
                 unique_errors = list(dict.fromkeys(errors))
