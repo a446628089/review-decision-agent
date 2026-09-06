@@ -4,6 +4,7 @@ import {
   FileText,
   MessageSquare,
   BookOpen,
+  Activity,
   GitBranch,
   PanelLeftClose,
   PanelLeft,
@@ -18,6 +19,7 @@ const navItems = [
   { to: '/decisions', label: '决策库', icon: GitBranch },
   { to: '/chat', label: 'AI 对话', icon: MessageSquare },
   { to: '/knowledge', label: '知识库', icon: BookOpen },
+  { to: '/agent-runs', label: 'Agent 监控', icon: Activity },
 ]
 
 export function Sidebar() {
