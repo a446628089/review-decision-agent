@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   CalendarDays,
   FileText,
+  GitBranch,
   PanelLeftClose,
   PanelLeft,
 } from 'lucide-react'
@@ -12,6 +13,7 @@ import { APP_TITLE } from '@/lib/constants'
 const navItems = [
   { to: '/', label: '会议管理', icon: CalendarDays },
   { to: '/summaries', label: '会议纪要', icon: FileText },
+  { to: '/decisions', label: '决策库', icon: GitBranch },
 ]
 
 export function Sidebar() {

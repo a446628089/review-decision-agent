@@ -9,13 +9,16 @@ import {
   MessageSquare,
   Sparkles,
   Trash2,
+  GitBranch,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Badge } from '@/components/ui/badge'
 import { MeetingStatusBadge } from '../components/meeting-status-badge'
 import { TranscriptVirtualList } from '../components/transcript-virtual-list'
 import { useMeeting, useTranscripts, useTranscriptionStatus, useDeleteMeeting } from '../hooks/use-meetings'
+import { useDecisions } from '../../decisions/hooks/use-decisions'
 import { formatDateTime } from '@/lib/utils'
 
 export default function MeetingDetailPage() {
@@ -26,6 +29,7 @@ export default function MeetingDetailPage() {
   const { data: transcripts, isLoading: transcriptsLoading } = useTranscripts(id)
   const { data: transcriptionStatus } = useTranscriptionStatus(id)
   const deleteMeeting = useDeleteMeeting()
+  const { data: decisions, isLoading: decisionsLoading } = useDecisions(0, 100, id)
 
   const isProcessing =
     transcriptionStatus?.status === 'transcribing' ||
@@ -216,6 +220,88 @@ export default function MeetingDetailPage() {
             </CardContent>
           </Card>
 
+          {/* 决策记录 */}
+          {meeting.status === 'processed' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <GitBranch className="h-5 w-5" />
+                    决策记录
+                    {decisions && (
+                      <span className="text-sm font-normal text-muted-foreground">
+                        ({decisions.total || decisions.items.length} 条)
+                      </span>
+                    )}
+                  </div>
+                  {decisions && decisions.total > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/decisions?meetingId=${meeting.id}`)}
+                    >
+                      查看全部
+                    </Button>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {decisionsLoading ? (
+                  <div className="space-y-3">
+                    {[...Array(3)].map((_, i) => (
+                      <Skeleton key={i} className="h-24" />
+                    ))}
+                  </div>
+                ) : decisions && decisions.items.length > 0 ? (
+                  <div className="space-y-3">
+                    {decisions.items.slice(0, 5).map((decision) => (
+                      <div
+                        key={decision.id}
+                        className="cursor-pointer rounded-md border p-3 transition-colors hover:bg-muted"
+                        onClick={() => navigate(`/decisions/${decision.id}`)}
+                      >
+                        <div className="mb-2 flex items-start justify-between gap-2">
+                          <h3 className="line-clamp-2 text-sm font-semibold">
+                            {decision.title}
+                          </h3>
+                          {decision.confidence != null && (
+                            <Badge variant="secondary" className="shrink-0">
+                              {(decision.confidence * 100).toFixed(0)}%
+                            </Badge>
+                          )}
+                        </div>
+                        {decision.chosen_option && (
+                          <p className="line-clamp-1 text-sm text-muted-foreground">
+                            <span className="font-medium text-foreground">已选：</span>
+                            {decision.chosen_option}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                    {decisions.total > 5 && (
+                      <div className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => navigate(`/decisions?meetingId=${meeting.id}`)}
+                        >
+                          还有 {decisions.total - 5} 条决策 →
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <GitBranch className="h-8 w-8 text-muted-foreground/50" />
+                    <p className="mt-3 text-sm font-medium">暂无决策</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      会议决策会在纪要生成时自动提取
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </>
       ) : (
         <div className="flex flex-col items-center justify-center py-20">
