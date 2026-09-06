@@ -88,6 +88,11 @@ class SummaryService:
             await self._save_action_items_and_risks(db, meeting_id, final_state)
             await db.flush()
             await db.refresh(summary)
+            try:
+                from app.services.knowledge_service import knowledge_service
+                await knowledge_service.index_meeting_summary(db=db, meeting_id=meeting_id, meeting_title=meeting.title, summary_content=summary.content)
+            except Exception as idx_err:
+                logger.warning(f'知识库索引失败: {idx_err}')
             return summary
         except Exception as e:
             logger.error(f'纪要生成失败: {e}')
