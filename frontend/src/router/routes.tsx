@@ -8,6 +8,7 @@ const SummaryDetailPage = lazy(() => import('@/features/summaries/pages/summary-
 const DecisionListPage = lazy(() => import('@/features/decisions/pages/decision-list-page'))
 const DecisionDetailPage = lazy(() => import('@/features/decisions/pages/decision-detail-page'))
 const KnowledgePage = lazy(() => import('@/features/knowledge/pages/knowledge-page'))
+const ChatPage = lazy(() => import('@/features/chat/pages/chat-page'))
 export const routes: RouteObject[] = [{ path: "/", element: <AppLayout />, children: [
   { index: true, element: <MeetingListPage /> },
   { path: "meetings/:id", element: <MeetingDetailPage /> },
@@ -16,4 +17,5 @@ export const routes: RouteObject[] = [{ path: "/", element: <AppLayout />, child
   { path: "decisions", element: <DecisionListPage /> },
   { path: "decisions/:id", element: <DecisionDetailPage /> },
   { path: "knowledge", element: <KnowledgePage /> },
+  { path: "chat", element: <ChatPage /> },
 ] }]
