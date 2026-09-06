@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api import api_router
 # 启动时触发 Tool Registry 注册（副作用 import）
+import app.agents.tools.meeting_ops  # noqa: F401
 
 # 配置 app logger（uvicorn 默认 root level=WARNING，需显式设置 INFO）
 logging.basicConfig(
