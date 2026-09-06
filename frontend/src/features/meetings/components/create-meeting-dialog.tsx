@@ -4,7 +4,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogFooter } from '@/components/ui/dialog'
+import { AudioUploader } from './audio-uploader'
 import { useCreateMeeting } from '../hooks/use-meetings'
+import { uploadAudio } from '@/api/meetings'
 
 interface CreateMeetingDialogProps {
   open: boolean
@@ -15,6 +17,8 @@ export function CreateMeetingDialog({ open, onClose }: CreateMeetingDialogProps)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [participants, setParticipants] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState('')
 
@@ -24,6 +28,8 @@ export function CreateMeetingDialog({ open, onClose }: CreateMeetingDialogProps)
     setTitle('')
     setDescription('')
     setParticipants('')
+    setFile(null)
+    setUploadProgress(0)
     setIsUploading(false)
     setError('')
   }
@@ -43,13 +49,20 @@ export function CreateMeetingDialog({ open, onClose }: CreateMeetingDialogProps)
     }
 
     try {
-      await createMeeting.mutateAsync({
+      const meeting = await createMeeting.mutateAsync({
         title: title.trim(),
         description: description.trim() || undefined,
         participants: participants
           ? participants.split(',').map((p) => p.trim()).filter(Boolean)
           : undefined,
       })
+
+      if (file) {
+        setIsUploading(true)
+        await uploadAudio(meeting.id, file, (percent) => {
+          setUploadProgress(percent)
+        })
+      }
 
       resetForm()
       onClose()
@@ -65,7 +78,7 @@ export function CreateMeetingDialog({ open, onClose }: CreateMeetingDialogProps)
       open={open}
       onClose={handleClose}
       title="新建会议"
-      description="创建研发评审会议"
+      description="创建会议并上传录音文件，系统将自动转写并生成纪要"
       closeOnOverlayClick={!isUploading}
     >
       <div className="space-y-5">
@@ -106,6 +119,17 @@ export function CreateMeetingDialog({ open, onClose }: CreateMeetingDialogProps)
           />
         </div>
 
+        {/* 音频上传 */}
+        <div className="space-y-2">
+          <Label>录音文件</Label>
+          <AudioUploader
+            onFileSelect={setFile}
+            selectedFile={file}
+            uploadProgress={uploadProgress}
+            isUploading={isUploading}
+          />
+        </div>
+
         {/* 错误提示 */}
         {error && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -123,7 +147,7 @@ export function CreateMeetingDialog({ open, onClose }: CreateMeetingDialogProps)
           disabled={isUploading || createMeeting.isPending}
         >
           {isUploading
-            ? '保存中'
+            ? `上传中 ${uploadProgress}%`
             : createMeeting.isPending
               ? '创建中...'
               : '创建会议'}
