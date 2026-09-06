@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   CalendarDays,
   FileText,
+  BookOpen,
   GitBranch,
   PanelLeftClose,
   PanelLeft,
@@ -14,6 +15,7 @@ const navItems = [
   { to: '/', label: '会议管理', icon: CalendarDays },
   { to: '/summaries', label: '会议纪要', icon: FileText },
   { to: '/decisions', label: '决策库', icon: GitBranch },
+  { to: '/knowledge', label: '知识库', icon: BookOpen },
 ]
 
 export function Sidebar() {
