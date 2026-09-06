@@ -64,7 +64,12 @@ export default function MeetingDetailPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-
+                  {meeting.status === 'processed' && (
+                    <Button onClick={() => navigate(`/summaries/${meeting.id}`)}>
+                      <Sparkles className="h-4 w-4" />
+                      生成纪要
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     onClick={handleDelete}
