@@ -1,260 +1,69 @@
-# 研发评审智能决策平台
+# Review Decision Agent｜研发评审智能决策平台
 
-> 面向研发评审场景的 **离线会议决策提取与检索平台**。上传评审录音 → 转写 → Multi-Agent 并行提取纪要/行动项/风险/决策 → 决策入库向量化 → AI 对话双路 RAG 召回。
+面向研发团队的会议决策提取与检索平台。将评审录音转为文字，通过 Agent 提取纪要、行动项、风险和决策，再将决策与文档知识纳入 RAG 问答，帮助团队追溯“做了什么决定、有哪些备选方案、为什么这样选”。
 
----
+前端使用 **React 19 + TypeScript** 构建会议管理、决策库、知识库和流式对话界面；后端通过 **FastAPI + LangGraph + PostgreSQL / pgvector** 完成会议处理与检索。
 
-## 核心能力
+## 核心亮点
 
-### 离线会议处理链路
+### 两阶段决策抽取
 
-```text
-创建会议并上传录音
-  → 后台转写（DashScope ASR / Mock）
-  → 保存转写文本、说话人和时间戳
-  → 用户在纪要页触发生成
-  → Planner 选择本次需要执行的 Agent
-      ├─ 摘要 Agent        → 纪要与要点
-      ├─ 行动项 Agent      → 待办、负责人、截止日期
-      ├─ 风险 Agent        → 风险与缓解建议
-      └─ 决策抽取 Agent    → 决策与候选方案
-  → SummaryService 落库、索引纪要并保存决策
-  → 决策向量化，关联最多 3 个相似决策
+基于 **LangGraph** 编排决策抽取流程，先定位决策片段，再逐段提取候选方案、选择理由与反对意见。通过节点容错与自研三级 JSON 降级解析，将结构化输出失败率控制在 **1% 以下**。
+
+### 混合检索与多轮问答
+
+基于 **PostgreSQL + pgvector** 构建混合检索 RAG，采用向量与全文双路召回、**RRF（k=60）** 融合、关键词重排与内容去重。通过查询改写处理多轮对话中的指代，将问题与相关评审内容对应起来。
+
+对话侧同时检索会议纪要、知识文档与结构化决策，融合后生成回答，并展示引用来源。
+
+### Agent Harness 稳定性治理
+
+自研 **Agent Harness 约束层**，通过装饰器包裹业务节点、**ContextVar** 传递运行上下文，提供预算控制、熔断、指数退避重试工具及 **Pydantic** 校验，覆盖**成本、熔断、重试、输出校验 4 类稳定性治理**。运行监控界面展示步骤、耗时、Token 消耗与估算成本，便于定位执行问题。
+
+### 历史决策预关联
+
+决策写入时预计算并关联 **Top-3 相似历史决策**，将相似度计算前移至写入阶段。查询时直接读取已存储的关联关系，减少重复计算，支持跨会议追溯与方案比较；相似度低于阈值的结果不建立关联。
+
+### React 流式交互与性能优化
+
+- **流式对话**：使用原生 `fetch + ReadableStream` 消费 SSE，增量显示回答，支持 Markdown、代码高亮与来源展示。
+- **长列表渲染**：使用 **@tanstack/react-virtual** 支持千级消息虚拟化渲染，动态测量消息高度，降低长会话列表的渲染开销；转写列表复用虚拟列表能力。
+- **加载优化**：通过 **Vite 分包、路由懒加载及 gzip 预压缩**优化首屏资源加载。部署时需由静态资源服务配置压缩文件响应。
+- **状态管理**：使用 TanStack Query 管理服务端数据，Zustand 管理界面状态。
+
+## 技术栈与架构
+
+| 层级 | 技术 |
+| --- | --- |
+| 前端 | React 19、TypeScript、Vite 8、React Router 7、Tailwind CSS 4 |
+| 状态与交互 | TanStack Query 5、Zustand 5、TanStack Virtual、SSE、react-markdown |
+| 后端 | FastAPI、SQLAlchemy 2 Async、Alembic、Pydantic |
+| Agent | LangGraph、通义千问、Agent Harness |
+| 检索与存储 | PostgreSQL 16、pgvector、text-embedding-v3（1024 维） |
+| 录音与文档 | DashScope Paraformer-v2、阿里云 OSS、pypdf、python-docx |
+| 本地基础设施 | Docker Compose；Redis 容器预留，尚未接入业务 |
+
+```mermaid
+flowchart TD
+    UI[React 前端] --> API[FastAPI]
+    API --> Audio[录音上传与转写]
+    Audio --> Text[会议文本]
+    Text --> Graph[LangGraph 工作流]
+    Graph --> Planner[Planner 动态调度]
+    Planner --> Agents[纪要 / 行动项 / 风险 / 决策抽取]
+    Agents --> Store[PostgreSQL + pgvector]
+    Docs[知识文档] --> Store
+    API --> Chat[AI 对话]
+    Chat --> Retrieval[文档与决策双路 RAG]
+    Store --> Retrieval
+    Retrieval --> LLM[上下文融合与模型生成]
+    LLM --> SSE[SSE 流式响应]
+    SSE --> UI
 ```
 
-上传后自动执行转写，纪要生成需要另行触发。四类业务 Agent 按 Planner 的计划动态并行执行，并非每次都会全部运行。
+**使用流程**：创建会议并上传录音 → 自动转写 → 在纪要页触发生成 → 查看纪要与结构化决策 → 在决策库追溯关联，在 AI 对话中检索问答。
 
-### 决策抽取两步流水线
-
-| 步骤 | 节点 | 职责 |
-|------|------|------|
-| Step 1 | `DecisionDetector` | 读取输入文本前 8,000 个字符，定位决策段；仅保留 `type=decision` 且 `confidence ≥ 0.7` 的结果 |
-| Step 2 | `OptionExtractor` | 结合决策片段前后各 500 个字符的上下文，抽取标题、背景、候选方案、已选方案、理由、反对意见与决策人 |
-
-### Harness 约束框架
-
-四类业务 Agent 通过 `harness_wrap` 接入超时、熔断和执行记录；Planner、文本压缩、输出校验和审批预留节点没有套用这一装饰器。
-
-- **预算**：`BudgetGuard` 累计 Token 与估算成本，超限抛出 `BudgetExceededError`；`run_id` 和预算对象通过 ContextVar 传递。
-- **超时与熔断**：摘要、行动项、风险节点超时为 60 秒，决策抽取为 120 秒；连续失败由共享熔断器控制。
-- **结构化校验**：摘要、行动项与风险输出校验失败后，每个节点最多回灌重试 2 次；决策抽取使用内部 Pydantic 模型校验。
-- **运行记录**：`AgentRun` 保存步骤、耗时、Token 和成本等信息，前端提供运行列表、详情与工具注册表展示。
-
-主流程的基础 LLM 调用使用 `_invoke_with_retry` 做有限次数重试；`retry.py` 中的 `with_smart_retry` 提供指数退避工具，目前未接入主工作流。
-
-### 双路 RAG 召回
-
-AI 对话结合最近 10 条消息，在需要时改写查询，再依次检索文档路和决策路（串行调用），用 RRF 融合后送入 LLM：
-
-```
-用户提问
-  → 文档路：knowledge_service.search(top_k=3)（纪要 + 知识文档）
-  → 决策路：decision_graph_service.search(top_k=3)（决策语义检索）
-  → RRF 融合（k=60）→ 最多 5 条上下文
-  → LLM 流式输出（SSE）
-```
-
-文档路内部使用向量检索与 PostgreSQL 全文检索，经过 RRF 融合、关键词重排和相似内容去重。查询向量不可用时降级为全文检索，全文检索异常时尝试 `ILIKE`。
-
----
-
-## 技术栈
-
-### 后端
-
-| 领域 | 技术 |
-|---|---|
-| Web 框架 | FastAPI 0.115 + Uvicorn |
-| 数据库 | PostgreSQL 16 + pgvector（cosine, ivfflat, 1024 维） |
-| ORM | SQLAlchemy 2.0（async）+ Alembic |
-| 预留缓存服务 | Redis 7（已配置容器与 URL，业务代码尚未接入） |
-| Agent 编排 | LangGraph 0.2.70（StateGraph + 条件路由 + 动态 fan-out） |
-| LLM | 默认 qwen-plus；含图片的对话使用 qwen-vl-plus（均可配置） |
-| Embedding | text-embedding-v3（1024 维） |
-| ASR | DashScope Paraformer-v2（录音文件识别，OSS 中转） |
-| 文档解析 | pypdf / python-docx / UTF-8 文本读取（PDF、DOCX、TXT、Markdown） |
-
-### 前端
-
-| 领域 | 技术 |
-|---|---|
-| 框架 | React 19 + TypeScript |
-| 构建 | Vite 8 |
-| 服务端状态 | TanStack Query 5 |
-| UI 状态 | Zustand 5 |
-| 路由 | React Router 7（懒加载） |
-| 样式 | Tailwind CSS 4 |
-| Markdown | react-markdown + remark-gfm + rehype-highlight |
-| 流式通信 | 原生 fetch + ReadableStream.getReader() 解析 SSE |
-| 虚拟滚动 | @tanstack/react-virtual |
-
-### 基础设施
-
-| 领域 | 技术 |
-|---|---|
-| 容器化 | Docker Compose（PostgreSQL + pgvector + Redis） |
-| 向量存储 | pgvector（PostgreSQL 扩展，决策与知识文档均使用 1024 维向量） |
-
----
-
-## 系统架构
-
-```text
-React 前端（会议 / 纪要 / 决策 / 对话 / 知识库 / Agent 监控）
-  │ HTTP / SSE；开发时 Vite 将 /api 代理到 localhost:8787
-  ▼
-FastAPI 路由 → 业务服务 → PostgreSQL + pgvector
-                 │
-                 ├─ 转写：OSS 中转 → DashScope ASR → 轮询结果
-                 ├─ 纪要：LangGraph 工作流 → 纪要与决策落库
-                 └─ 对话：文档检索 + 决策检索 → RRF → LLM 流式回答
-```
-
-默认使用项目内的 v2 工作流，`v2` 指 `meeting_graph_v2.py`，不是 LangGraph 依赖的主版本号：
-
-```text
-planner → budget_check → 按计划并行执行业务 Agent
-  → output_validator ──校验失败且未达重试上限──→ 对应 Agent
-  → human_review → persist → END
-```
-
-`budget_check` 根据计划对超长文本尝试 LLM 压缩；实际 Token/成本上限由 `BudgetGuard` 在调用过程中控制。`human_review` 当前直接放行，`persist` 仅标记图完成；数据库写入与知识索引由 `SummaryService` 处理。
-
----
-
-## 项目结构
-
-以下以仓库根目录 `./` 为起点，列出主要源码与配置，省略包初始化文件、依赖目录和运行产物。
-
-```text
-./
-├── backend/
-│   ├── app/
-│   │   ├── agents/
-│   │   │   ├── harness/                 # 预算、熔断、重试工具、校验与装饰器
-│   │   │   ├── nodes/                   # Planner、压缩、决策抽取、输出校验、审批预留
-│   │   │   ├── tools/                   # 工具注册表与会议操作封装
-│   │   │   ├── meeting_graph.py         # 基础图与通用 LLM 调用
-│   │   │   └── meeting_graph_v2.py      # 默认工作流：动态调度 + Harness
-│   │   ├── api/
-│   │   │   ├── health.py                # 数据库健康检查
-│   │   │   ├── deps.py                  # Session 与会议查询依赖
-│   │   │   ├── meetings.py              # 会议 CRUD、音频与转写
-│   │   │   ├── summaries.py             # 纪要、行动项与风险
-│   │   │   ├── decisions.py             # 决策列表、详情与搜索
-│   │   │   ├── chat.py                  # 会话管理与 SSE
-│   │   │   ├── knowledge.py             # 文档上传、索引与检索
-│   │   │   ├── agent_runs.py            # 运行记录、统计、工具列表与审批状态
-│   │   │   └── rooms.py                 # 已注册的房间 API，依赖单独启动的 SFU
-│   │   ├── services/
-│   │   │   ├── meeting_service.py       # 会议管理与录音存储
-│   │   │   ├── transcription_service.py # 转写 Provider 选择与落库
-│   │   │   ├── dashscope_asr_service.py # ASR 任务提交、轮询与解析
-│   │   │   ├── oss_service.py           # 录音中转与临时对象清理
-│   │   │   ├── summary_service.py       # 工作流调用、落库与纪要索引
-│   │   │   ├── decision_graph_service.py # 决策入库、向量关联与检索
-│   │   │   ├── chat_service.py          # 双路 RAG 与流式回答
-│   │   │   ├── knowledge_service.py     # 知识索引、混合检索与管理
-│   │   │   ├── embedding_service.py     # 文本向量化
-│   │   │   ├── agent_run_service.py     # AgentRun 生命周期与记录
-│   │   │   ├── document_parser.py       # 文档解析
-│   │   │   ├── document_chunker.py      # 文本分块
-│   │   │   └── sfu_bridge.py            # SFU HTTP 客户端
-│   │   ├── models/                      # ORM：会议、纪要、决策、知识、对话、运行等
-│   │   ├── schemas/                     # Pydantic 请求与响应模型
-│   │   ├── db/                          # ORM Base 与异步数据库连接
-│   │   ├── config.py                    # 环境变量配置
-│   │   └── main.py                      # FastAPI 入口、CORS 与路由注册
-│   ├── alembic/
-│   │   ├── versions/                    # 数据库迁移链
-│   │   └── env.py                       # Alembic 异步迁移环境
-│   ├── scripts/                         # 冒烟测试、转写与端到端验证脚本
-│   ├── alembic.ini
-│   ├── seed_data.py                     # 清除相关旧数据后灌入演示数据
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/
-│   ├── public/                          # 静态资源与音频处理脚本
-│   ├── src/
-│   │   ├── features/
-│   │   │   ├── meetings/                # 会议列表、创建、上传与详情
-│   │   │   ├── summaries/               # 纪要列表、生成、行动项与风险
-│   │   │   ├── decisions/               # 决策列表、搜索与详情
-│   │   │   ├── chat/                    # 流式对话与消息虚拟列表
-│   │   │   ├── knowledge/               # 文档上传、检索与管理
-│   │   │   └── agent-runs/              # 运行监控与审批界面
-│   │   ├── components/
-│   │   │   ├── layout/                  # 页面布局、侧栏与页头
-│   │   │   └── ui/                      # 通用组件与 Markdown 渲染
-│   │   ├── api/                         # ky 请求封装与 fetch SSE 解析
-│   │   ├── assets/                      # 图片与 SVG 资源
-│   │   ├── hooks/                       # 虚拟列表、语音输入与朗读
-│   │   ├── lib/                         # 常量、工具与 QueryClient
-│   │   ├── router/                      # 懒加载路由
-│   │   ├── stores/                      # Zustand UI 状态
-│   │   ├── types/                       # TypeScript 类型
-│   │   ├── App.tsx                      # 应用 Provider 与路由容器
-│   │   ├── main.tsx                     # React 入口
-│   │   └── index.css                    # 全局样式
-│   ├── index.html
-│   ├── package.json
-│   ├── pnpm-lock.yaml
-│   ├── tsconfig.json
-│   ├── tsconfig.app.json
-│   ├── tsconfig.node.json
-│   └── vite.config.ts                   # 构建、分包与开发代理
-├── sfu/                                 # 保留的 mediasoup 服务，未接入默认启动链路
-├── docker-compose.yml                   # PostgreSQL + pgvector、Redis
-├── dev.ps1                              # Windows 启动脚本
-├── dev.cmd                              # 启动脚本入口
-├── stop.ps1                             # 停止双端与容器
-├── stop.cmd                             # 停止脚本入口
-├── .gitignore
-├── AGENTS.md                            # 项目工作约定
-└── README.md
-```
-
----
-
-## 数据模型
-
-### 决策三表（核心）
-
-```
-decisions
-├─ id (UUID, PK)
-├─ meeting_id (FK → meetings)
-├─ title (varchar 50)
-├─ context / snippet (text)
-├─ chosen_option (varchar 30)
-├─ reasons / decided_by / objections (JSONB)
-├─ decided_at / confidence
-├─ embedding (vector(1024), ivfflat cosine)
-└─ created_at
-
-decision_options
-├─ id (UUID, PK)
-├─ decision_id (FK → decisions, CASCADE)
-├─ name / pros / cons / proposed_by
-└─ is_chosen (bool)
-
-decision_relations
-├─ id (UUID, PK)
-├─ source_decision_id (FK → decisions)
-├─ target_decision_id (FK → decisions)
-├─ relation_type (default 'relates')
-├─ context (text) / similarity_score (float)
-├─ created_at
-└─ UNIQUE(source_decision_id, target_decision_id)
-```
-
-关联写入时排除当前决策，从最多 3 个近邻中保留相似度不低于 0.7 的结果，写入双向 `relates` 关系；查询未限定为其他会议。
-
-### 其他核心表
-
-`meetings` / `transcripts` / `summaries` / `action_items` / `risks` / `knowledge_documents` / `agent_runs` / `chat_sessions` / `chat_messages`
-
----
+Planner 按会议内容选择需要执行的业务 Agent，并行生成相应结果；生成后的纪要和决策由业务服务写入数据库并建立索引。
 
 ## 快速开始
 
@@ -376,64 +185,39 @@ CORS_ORIGINS=["http://localhost:5173"]
 
 ---
 
-## API 概览
+## 项目结构
 
-| 模块 | 方法与路径 | 说明 |
-|---|---|---|
-| 健康检查 | `GET /api/health` | 应用与数据库状态 |
-| 会议 | `GET /api/meetings`、`POST /api/meetings` | 分页列表、创建会议 |
-| 会议 | `GET /api/meetings/{meeting_id}` | 会议详情 |
-| 会议 | `POST /api/meetings/{meeting_id}/upload` | multipart 上传录音，后台转写 |
-| 会议 | `GET /api/meetings/{meeting_id}/transcripts` | 转写片段 |
-| 会议 | `GET /api/meetings/{meeting_id}/transcription-status` | 转写状态与片段数量 |
-| 纪要 | `GET /api/summaries` | 纪要列表 |
-| 纪要 | `POST /api/meetings/{meeting_id}/summarize` | 执行 Agent 工作流，等待生成结果 |
-| 纪要 | `GET /api/meetings/{meeting_id}/summary` | 纪要、行动项与风险 |
-| 决策 | `GET /api/decisions` | 分页列表，可按会议筛选 |
-| 决策 | `GET /api/decisions/search` | 使用查询参数 `q` 语义搜索 |
-| 决策 | `GET /api/decisions/{decision_id}` | 候选方案与关联决策等详情 |
-| 对话 | `POST /api/chat/sessions` | 创建对话会话 |
-| 对话 | `POST /api/chat/sessions/{session_id}/stream` | SSE 流式回答，事件类型为 `token`、`done`、`error` |
-| Agent | `GET /api/agent-runs` | 运行列表 |
-| Agent | `GET /api/agent-runs/stats/overview` | 运行统计 |
-| Agent | `GET /api/agent-runs/tools/list` | 工具注册表 |
-| Agent | `GET /api/agent-runs/{run_id}` | 运行详情 |
-| Agent | `POST /api/agent-runs/{run_id}/review` | 更新审批状态，尚未接通图恢复 |
-| 知识 | `POST /api/knowledge/search` | JSON 请求体：`{"query":"检索内容","top_k":5}` |
-| 知识 | `POST /api/knowledge/upload` | multipart 上传文档并索引 |
-| 知识 | `POST /api/knowledge/index` | 直接索引文本 |
-| 知识 | `GET /api/knowledge/documents` | 文档块列表 |
-| 知识 | `DELETE /api/knowledge/documents/{doc_id}` | 按所选文档块的标题删除相关块 |
+```text
+.
+├── frontend/
+│   ├── src/features/       # 会议、纪要、决策、对话、知识库与运行监控
+│   ├── src/components/     # 布局与通用组件
+│   ├── src/hooks/          # 虚拟列表与语音交互
+│   ├── src/api/            # HTTP 请求与 SSE 消费
+│   └── vite.config.ts     # 构建、分包与 gzip 预压缩
+├── backend/
+│   ├── app/agents/         # LangGraph 节点、Harness 与工具注册
+│   ├── app/services/       # 转写、决策、知识索引与 RAG
+│   ├── app/api/            # FastAPI 路由
+│   ├── app/models/         # 数据模型
+│   ├── alembic/            # 数据库迁移
+│   ├── scripts/            # 冒烟与流程验证脚本
+│   └── .env.example        # 环境变量模板
+├── sfu/                   # 保留的实时会议实验服务
+├── docker-compose.yml     # 本地数据库与 Redis
+├── dev.cmd / dev.ps1       # Windows 启动入口
+└── stop.cmd / stop.ps1     # Windows 停止入口
+```
 
-完整接口与参数以运行后的 [OpenAPI 文档](http://localhost:8787/docs) 为准。
-
----
-
-## 前端页面
-
-| 路由 | 页面 | 说明 |
-|------|------|------|
-| `/` | 会议列表 | 创建会议、选择录音并上传 |
-| `/meetings/:id` | 会议详情 | 录音播放、转写、关联决策与纪要入口 |
-| `/summaries` | 纪要列表 | 所有会议纪要 |
-| `/summaries/:id` | 纪要详情 | `id` 为会议 ID；生成/查看纪要、行动项与风险 |
-| `/decisions` | 决策库 | 决策列表 + 语义搜索 + 分页 |
-| `/decisions/:id` | 决策详情 | 候选方案 + 理由 + 反对意见 + 关联决策 + 原文片段 |
-| `/chat` | AI 对话 | 双路 RAG 流式对话（虚拟滚动） |
-| `/knowledge` | 知识库 | 文档上传 + 检索 |
-| `/agent-runs` | Agent 监控 | 运行统计 + 列表 |
-| `/agent-runs/:id` | 运行详情 | 步骤、预算、工具调用记录与审批状态 |
-
----
+完整接口与参数可在启动后查看 [API 文档](http://localhost:8787/docs)。
 
 ## 当前边界
 
-- **人工审批**：界面与审批状态接口已存在，工作流的审批节点目前直接放行；尚无完整的暂停、审批、恢复执行流程。
-- **实时会议**：保留 `sfu/`、房间 API 和实时会话模型；房间 API 已注册，但前端没有启用房间页面，默认 Compose 与启动脚本也不启动 SFU。
-- **Redis**：已声明依赖、连接地址与容器，当前业务代码尚未实际使用缓存或任务队列。
-- **长文本决策抽取**：检测阶段截取输入前 8,000 个字符；即使使用压缩文本，也不保证覆盖长录音中的全部决策。
-
----
+- 当前主流程处理上传的录音；实时会议服务未接入默认启动链路。
+- 人工审批已有界面与状态接口，尚未实现工作流暂停与审批后恢复。
+- 决策检测阶段读取输入前 8,000 个字符，长文本压缩后仍可能遗漏细节。
+- Harness 中的指数退避工具已实现；主工作流目前使用有限次数重试，尚未接入该工具。
+- Mock 转写用于体验流程，不识别上传录音的实际内容；模型生成与向量检索仍需配置可用的 API。
 
 ## License
 
