@@ -77,8 +77,8 @@ Planner 按会议内容选择需要执行的业务 Agent，并行生成相应结
 ### 获取项目与安装依赖（Windows PowerShell）
 
 ```powershell
-git clone https://github.com/a446628089/DdddkVerdict.git
-cd DdddkVerdict
+git clone https://github.com/a446628089/review-decision-agent.git
+cd review-decision-agent
 
 python -m venv backend/.venv
 .\backend\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
